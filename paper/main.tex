@@ -39,69 +39,60 @@
 
 \begin{abstract}
   We present Robust Heteroskedastic Matrix Factorization (RHMF), a replacement for Principal Component Analysis (PCA) that is robust to outliers, handles per-point uncertainties and missing data, and automatically flags per-point, per-object, and per-feature anomalies.
-%   \hogg{I rearranged the abstract slightly and mentioned ``per-feature.'' That latter point needs to be carried through the text.}
-  It works by optimizing a likelihood-like objective function that is adaptive to bad data and has a probabilistic interpretation.
-    We deliver a fast \texttt{JAX} implementation, Robusta-HMF, and practical guidance for users.
-    We demonstrate uses on a toy dataset, on RVS spectra from Gaia DR3, and on \placeholder{DEMO 3}.
-    In the Gaia case, outlier detection finds \placeholder{WEIRD STUFF}.
-    In \placeholder{DEMO 3}, we accurately recover \placeholder{SOMETHING} despite heteroskedastic noise, hot pixels, missing data, and a variety of outliers.
+  It works by optimizing a Student-$t$ likelihood-based objective function that adapts to bad data and has a probabilistic interpretation.
+  We deliver a fast \texttt{JAX} implementation, Robusta-HMF, and practical guidance for users.
+  We demonstrate uses on a toy dataset, on RVS spectra from Gaia DR3, and on \placeholder{DEMO 3}.
+  In the Gaia case, outlier detection finds \placeholder{WEIRD STUFF}.
+  In \placeholder{DEMO 3}, we accurately recover \placeholder{SOMETHING} despite heteroskedastic noise, hot pixels, missing data, and a variety of outliers.
 \end{abstract}
 
 \section{Introduction}
 
-% \tom{Define per-data-point and per-object at some point and use it consistently throughout the paper. There could also be per-feature.}
-
 Matrix factorization methods are workhorses of modern astronomy.
-They offer data-driven approaches to simplifying, de-noising, and lowering the dimensionality of complex datasets, without the need for a detailed physical model. \hogg{You could cite NNMF here, my HMF, maybe factor analysis? and PCA}
-They come with the benefit of being generally fast and straightfoward to fit with numerical linear algebra.
-In stellar spectroscopy, these methods are used to find a low-dimensional embedding of the spectra of a population of stars, which can then be used for parameter estimation \placeholder{citations}, classification \placeholder{citations}, and label transfer \placeholder{citations}.
-In high-contrast imaging, they are used to build a data-driven model of the quasistatic starlight in a sequence of exposures, in order to subtract that signal from each frame and look for faint companions in the stacked residuals \placeholder{citations}.
-\hogg{I like the examples, and on HCI, cite my work with Rob Fergus, which uses PCA. My standard example here would be the original SDSS redshift pipeline, but that's somewhat redundant with your stellar spectra one.}
+Principal component analysis \citep[PCA;][]{pearson1901, hotelling1933}, non-negative matrix factorization \citep{lee1999}, heteroskedastic matrix factorization \citep{tsalmantza2012}, and their relatives offer data-driven approaches to simplifying, de-noising, and lowering the dimensionality of complex datasets, without the need for a detailed physical model.
+They are generally fast and straightforward to fit with numerical linear algebra.
+In stellar spectroscopy, these methods are used to find a low-dimensional embedding of the spectra of a population of stars, which can then be used for parameter estimation \citep{ness2015}, classification \citep{refiorentin2007}, and label transfer \citep{casey2016}.
+In high-contrast imaging, they are used to build a data-driven model of the quasistatic starlight in a sequence of exposures, in order to subtract that signal from each frame and look for faint companions in the stacked residuals \citep{soummer2012, amara2012, fergus2014}.
 
-The last universal common ancestor of all matrix-factorization methods, and by far the most widely used, is principal component analysis \citep[PCA;][]{pearson1901,hotelling1933}.
-PCA approximates a full-rank rectangular $N \times M$ data matrix ${\bf Y}$ with a matrix ${\bf L}$ of lower rank $K \le {\rm min} \, (N, M)$ by minimizing the sum of squared residuals between ${\bf Y}$ and ${\bf L}$ \citep{eckart1936}.
-The $K$ \emph{components} delivered by PCA are orthonormal basis vectors contained in the $K$ rows of some $K \times M$ matrix ${\bf G}$, while the \emph{coefficients} are the $N$ rows of a $N \times K$ matrix ${\bf A}$, such that ${\bf L} = {\bf A}\,{\bf G}$.
-% \hogg{I believe that the \emph{multiply} operator is always a thin space. Don't be just putting symbols next to each other.}
+The last universal common ancestor of all matrix-factorization methods, and by far the most widely used, is PCA.
+It approximates a full-rank rectangular $N \times M$ data matrix ${\bf Y}$ with a matrix ${\bf L}$ of lower rank $K \le {\rm min} \, (N, M)$ by minimizing the sum of squared residuals between ${\bf Y}$ and ${\bf L}$ \citep{eckart1936}.
+The $K$ \emph{components} delivered by PCA are orthonormal basis vectors contained in the $K$ rows of some $K \times M$ matrix ${\bf G}$, while the \emph{coefficients} are the $N$ rows of an $N \times K$ matrix ${\bf A}$, such that ${\bf L} = {\bf A}\,{\bf G}$.
 PCA simultaneously learns both the basis vectors and the coefficients, and it has the nice property that the basis vectors are orthogonal and ordered by explained variance.
 
 Like almost all of its machine-learning-method descendants, PCA requires complete, rectangular data and treats every data point as equally important.
 It is extremely sensitive to outliers; a single bad data point in a single row can spoil many or all of the delivered basis vectors.
 This is because PCA aims to minimize the unexplained variance, and the empirical variance in a block of data can easily be dominated by a few outliers.
 
-% \textbf{Robustness (in astronomy):}
-Unrelated to the successes of PCA, weighted least squares (WLS) or $\chi^2$ fitting \placeholder{citations, laplace} has been used extensively but is similarly sensitive to outliers.
-Astronomers have mostly dealt with this with $\sigma$-clipping \placeholder{citations}, which removes data points with large residuals relative to their measurement uncertainties.
-This adds \emph{robustness}, which is the ability of a model to deal with anomalous data points that violate the assumptions of the model.
-$\sigma$-clipping is however an ad-hoc fix, and subject to a form of ``mode collapse'' in which large amounts of data are excluded and the inferred model fails to be representative of most of the data.
-Fortunately, statisticians came up with iteratively reweighted least squares (IRLS), a family of methods that has all the good properties of WLS, is robust to outliers, has $\sigma$-clipping as a special case, and is generally far less prone to mode collapse.
-IRLS is a workhorse in many domains like remote sensing \placeholder{citations}, and it has seen some use in astronomy \placeholder{citations}.
+Unrelated to the successes of PCA, weighted least squares (WLS) or $\chi^2$ fitting \citep{legendre1805} has been used extensively but is similarly sensitive to outliers.
+Astronomers have mostly dealt with this using $\sigma$-clipping \citep{hoaglin1983}, which removes data points with large residuals relative to their measurement uncertainties.
+This adds \emph{robustness}: the ability of a model to deal with anomalous data points that violate the assumptions of the model.
+$\sigma$-clipping is however an ad-hoc fix, and is subject to a form of ``mode collapse'' in which large amounts of data are excluded and the inferred model fails to be representative of most of the data.
+Fortunately, statisticians came up with iteratively reweighted least squares \citep[IRLS;][]{holland1977}, a family of methods that has all the good properties of WLS, is robust to outliers, has $\sigma$-clipping as a special case, and is generally far less prone to mode collapse.
+IRLS is a workhorse in many domains, and it has seen some use in astronomy \citep{hogg2010}.
 
-% \textbf{Existing robust PCA:}
 \citet{candes2011} originally proposed a \emph{robust PCA}, where the decomposition of ${\bf Y}$ is into both a low-rank component ${\bf L}$ and a sparse component ${\bf S}$, such that ${\bf Y} = {\bf L} + {\bf S}$.
 Under some reasonable conditions, \citet{candes2011} showed that this decomposition can be performed exactly.
-Since then, the method has been iterated on in many ways, focusing mostly on speed \placeholder{citations}, scalability \placeholder{citations}, or including some form of regularisation \placeholder{citations}.
-A subset of these many methods have provable convergence \placeholder{citations}, are non-linear \placeholder{citations}, or have a probabilistic interpretation \placeholder{citations}.
+Since then, the method has been iterated on in many ways, focusing mostly on speed \citep{lin2010}, scalability \citep{rodriguez2013, halko2011}, or including some form of regularisation \citep{guyon2012, wohlberg2012}.
+A subset of these many methods have provable convergence \citep{netrapalli2014}, are non-linear \citep{scholkopf1998, wohlberg2012}, or have a probabilistic interpretation \citep{tipping1999}.
 A recent improvement called ``cellPCA'' gives a measure of outlier degree on both a per-data-point and per-row level \citep{centofanti2024}, where per-row in astronomical contexts might correspond to per-object, per-spectrum, or per-exposure.
 
-% \textbf{Astronomy-specific problems (missing data, heteroskedasticity):}
-Unfortunately, none of these methods have been designed with astronomical data in mind, and so they do not handle the common issues of missing data segments, or on having varying measurement uncertainties across the data (known as heteroskedasticity).
-In spectroscopy for example, there are often detector defects, hot pixels, or cosmic ray hits that cause missing data, measurement uncertainties vary across a single spectrum due to the wavelength dependence of the instrument response, and different spectra in the catalogue can have vastly different signal-to-noise ratios.
-\cite{tsalmantza2012} introduced heteroskedastic matrix factorisation (HMF) as a PCA replacement that handles both these cases by weighting each point by its inverse uncertainty variance.
+Unfortunately, none of these methods have been designed with astronomical data in mind, and so they do not handle the common issues of missing data segments or varying measurement uncertainties across the data (known as heteroskedasticity).
+In spectroscopy for example, there are often detector defects, hot pixels, or cosmic ray hits that cause missing data.
+Measurement uncertainties vary across a single spectrum due to the wavelength dependence of the instrument response, and different spectra in the catalogue can have vastly different signal-to-noise ratios.
+\citet{tsalmantza2012} introduced heteroskedastic matrix factorisation (HMF) as a PCA replacement that handles both these cases by weighting each point by its inverse uncertainty variance.
 However, HMF is still very sensitive to outliers and anomalies unless already downweighted, and it does not have a principled way to identify these unknown outliers.
 
-% \textbf{Our solution:}
 The method we present in this paper is a straightforward generalisation of HMF that adds robustness to outliers through an IRLS scheme, which we call robust-HMF or RHMF.
-It supports missing data, heteroskedasticity and flags and automatically downweights outliers on both a per-data-point and a per-object level.
-The automatic downweighting provides a continuous measure of discrepancy (outlier-y-ness, if you will), which can be used to automatically identify anomalous data points and objects, such as unusual spectra or emission lines.
-\hogg{Tom likes long sentences; the previous could be two sentences---it makes two points. Tom should audit the text for long sentences and, when in doubt, split. Our reader will thank us.}
+It supports missing data, heteroskedasticity, and automatically downweights outliers on both a per-data-point and a per-object level.
+The automatic downweighting provides a continuous measure of discrepancy (outlier-y-ness, if you will).
+This measure can be used to identify anomalous data points and objects, such as unusual spectra or emission lines.
 The algorithm uses a simple alternating linear least squares scheme with provable convergence and competitive performance.
-The model also has a probabilistic interpretation as either heavy-tailed maximal likelihood estimation, or equivalently as a hierarchical Bayesian model with latent variances.
+The model also has a probabilistic interpretation as either heavy-tailed maximum likelihood estimation, or equivalently as a hierarchical Bayesian model with latent variances.
 To our knowledge, no published robust PCA method has all of these properties together.
 Unlike \citet{candes2011} and its descendants \citep[e.g.][]{zhou2010,yin2019}, we do not explicitly learn a sparse outlier matrix ${\bf S}$, and instead rely on the inferred robust weights to quantify outlier-y-ness.
 
-% \textbf{Paper outline:}
 In Section~\ref{sec:methods} we present the model, the algorithm by which it is fit, and discuss using it for outlier identification.
-In Section~\ref{sec:toy} we demonstrate the approach on 3 example problems: a toy dataset, Gaia RVS spectra, and \placeholder{DEMO 3}.
+In Section~\ref{sec:toy} we demonstrate the approach on three example problems: a toy dataset, Gaia RVS spectra, and \placeholder{DEMO 3}.
 The toy dataset is provided for illustration and validation of the method, the Gaia RVS spectra are used to demonstrate outlier identification, and \placeholder{DEMO 3} is used to show how the robustness and treatment of missing and heteroskedastic data leads to greater \placeholder{SOMETHING}.
 In Section~\ref{sec:discussion} we discuss the strengths and shortcomings of the model, potential applications and extensions, and the relationship to other methods in the literature.
 
@@ -181,7 +172,7 @@ We make the following assumptions:
     \item \textbf{Missing data}: Missing values at particular locations $i, j$ can be handled by setting weights $w_{ij}$ to zero or (equivalently) by setting the corresponding measurement uncertainties $\sigma_{ij}$ to infinity (or arbitrarily large).
     \item \textbf{Rectangular data}: At each fixed pixel index $j$, pixel values across all spectra $i$ correspond to the same feature or (in the case of spectroscopy) wavelength. \hogg{I think we should talk about objects and features, and this property here is rectangularity. There is additionally an assumption that $M$ is the same for all $i$, where missing data are accounted for by zero-padding the weights.} \tom{agree, I already felt a bit funny about using pixels everywhere so features is great. TODO.}
     \item \textbf{Basis orthogonality}: The inferred basis vectors, and so the rows of $G$, will be made strictly orthogonal and ordered by explained variance, in analogy to principal component analysis.
-      \item \textbf{Low rank}: The rank of the model is restricted to $1 \le K < \min(N, M)$. \hogg{I believe we must be \emph{strictly} low rank to have nontrivial behavior.} \tom{Agreed, do I need to be more explicit than $K < \min(N, M)$?}
+      \item \textbf{Low rank}: The rank of the model is strictly low rank, with $1 \le K < \min(N, M)$. When $K = \min(N, M)$, the product ${\bf A}\,{\bf G}$ can represent any $N \times M$ matrix and the model perfectly reproduces ${\bf Y}$ with zero residuals everywhere. In that case all robust weights collapse to unity, no outliers are identified, and no noise is separated from signal---the model simply memorizes the data. Strict low rank forces the model to choose which structure to retain and which to treat as residual, and it is this compression that makes the robustness and outlier detection meaningful.
     \item \textbf{Outlier sparsity}: The outliers in the data are rare; the vast majority of the nonzero-weight pixels are \emph{not} outliers.
     \item \textbf{Outlier uniqueness}: The outliers do not themselves show low-rank structure; that is, the low-rank structure is only in the \emph{inlier} and not the \emph{outlier} part of the data set.
 \end{enumerate}
