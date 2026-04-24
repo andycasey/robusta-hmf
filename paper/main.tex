@@ -48,7 +48,7 @@
 
 \section{Introduction}
 
-Most stellar spectra are well-described by a low-dimensional manifold. There are a handful of physical parameters -- effective temperature, surface gravity, metallicity, $\alpha$-element enhancement, and perhaps projected rotation and a continuum shape -- that account for most of the variation across thousands of pixels of a given spectrum, for most stars of most types. This is both an expectation of stellar atmosphere theory \citep{cite_theory} and an empirical finding from data-driven analyses of large spectroscopic surveys \citep[e.g.][]{ness2015, casey2016, ting}. A central task of modern stellar spectroscopy is to identify this manifold from the data, represent it compactly, and place every observed spectrum on it. In doing so, we can improve any subsequent label estimation, de-noise spectra, and find astrophysical outliers: often the most scientifically interesting objects.\\
+Most stellar spectra are well-described by a low-dimensional manifold. There are a handful of physical parameters -- effective temperature, surface gravity, metallicity, $\alpha$-element enhancement, and perhaps projected rotation and a continuum shape -- that account for most of the variation across thousands of pixels of a given spectrum, for most stars of most types. This is both an expectation of stellar atmosphere theory \citep{hubeny2014} and an empirical finding from data-driven analyses of large spectroscopic surveys \citep[e.g.][]{ness2015, casey2016, ting2019}. A central task of modern stellar spectroscopy is to identify this manifold from the data, represent it compactly, and place every observed spectrum on it. In doing so, we can improve any subsequent label estimation, de-noise spectra, and find astrophysical outliers: often the most scientifically interesting objects.\\
 
 This work tackles two practical problems that arise in pursuit of this goal. The first problem is manifold recovery and projection: how can we learn a low-dimensional basis from a collection of spectra, and for each spectrum, find the coefficients that reconstruct it from that basis? A good embedding of this type is useful in equal measure for label estimation, denoising, and compression. The hard part is not the linear algebra; the hard part are the data. Real surveys are heteroskedastic, with missing segments, corrupted pixels, and innumerable other peculiarities. Under these conditions, standard methods to find a low-dimensional embedding fail.\\
 
@@ -57,8 +57,8 @@ The second problem is identifying ``outliers'' and handling them appropriately. 
 
 Matrix factorization methods are often used to solve these problems. Principal component analysis \citep[PCA;][]{pearson1901, hotelling1933}, non-negative matrix factorization \citep{lee1999}, heteroskedastic matrix factorization \citep{tsalmantza2012}, and their relatives offer data-driven approaches to simplifying, de-noising, and lowering the dimensionality of complex datasets, without the need for a detailed physical model.
 They are generally fast and straightforward to fit with numerical linear algebra.
-In stellar spectroscopy, these methods are used to find a low-dimensional embedding of the spectra of a population of stars, which can then be used for instrument calibration \citep{casey2026}, parameter estimation \citep{ness2015}, classification \citep{refiorentin2007}, and label transfer \citep{casey2016}.
-In high-contrast imaging, they are used to build a data-driven model of the quasistatic starlight in a sequence of exposures, in order to subtract that signal from each frame and look for faint companions in the stacked residuals \citep{soummer2012, amara2012, fergus2014}.\\
+In stellar spectroscopy, these methods are used to find a low-dimensional embedding of the spectra of a population of stars, which can then be used for label transfer \citep{ness2015,casey2016}, classification \citep{refiorentin2007}, or instrument calibration \citep{zhao2021,casey2026}.
+In high-contrast imaging, they are used to build a data-driven model of the quasistatic starlight in a sequence of exposures, in order to subtract that signal from each frame and look for faint companions in the stacked residuals \citep{soummer2012, amara2012, fergus2014}.\\ % include reduced order models and their utility in GW data analysis?
 
 PCA is the most widely used of these methods, by a long margin. It approximates a full-rank rectangular $N \times M$ data matrix ${\bf Y}$ with a matrix ${\bf L}$ of lower rank $K \le {\rm min} \, (N, M)$ by minimizing the sum of squared residuals between ${\bf Y}$ and ${\bf L}$ \citep{eckart1936}.
 The $K$ \emph{components} delivered by PCA are orthonormal basis vectors contained in the $K$ rows of some $K \times M$ matrix ${\bf G}$, while the \emph{coefficients} are the $N$ rows of an $N \times K$ matrix ${\bf A}$, such that ${\bf L} = {\bf A}\,{\bf G}$.
@@ -87,8 +87,7 @@ Like HMF, it supports missing data and heteroskedastic measurement uncertainties
 This automatic downweighting provides a continuous measure of discrepancy (outlier-y-ness, if you will) that can be used to identify anomalous features (pixels) or objects, such as unusual spectra or emission lines.
 The algorithm uses a simple alternating linear least squares scheme with provable convergence properties and competitive performance.
 We show that the model also has a probabilistic interpretation as either heavy-tailed maximum likelihood estimation, or equivalently as a hierarchical Bayesian model with latent variances.
-To our knowledge, no published robust matrix factorization method has all of these properties together: heteroskedasticity, missing data, robustness to outliers, and a probabilistic interpretation.\\
-Unlike \citet{candes2011} and its descendants \citep[e.g.][]{zhou2010,yin2019}, we do not explicitly learn a sparse outlier matrix ${\bf S}$, and instead rely on the inferred robust weights to quantify outlier-y-ness. \\
+To our knowledge, no published robust matrix factorization method has all of these properties together: heteroskedasticity, missing data, robustness to outliers, and a probabilistic interpretation. Unlike \citet{candes2011} and its descendants \citep[e.g.,][]{zhou2010,yin2019}, we do not explicitly learn a sparse outlier matrix ${\bf S}$, and instead rely on the inferred robust weights to quantify outlier-y-ness. \\
 
 In Section~\ref{sec:methods} we present the model, the algorithm by which it is fit, and discuss using it for outlier identification.
 In Section~\ref{sec:toy} we demonstrate the approach on two example problems: a toy dataset, and with Gaia RVS spectra.
@@ -568,7 +567,7 @@ There are clear, strong Ca II emission lines, indicative of magnetic or accretio
     \label{fig:umap}
 \end{figure}
 
-Finally, we applied UMAP \placeholder{citation} to the residual spectra for all the identified outliers.
+Finally, we applied UMAP \citep{mcinnes2018} to the residual spectra for all the identified outliers.
 UMAP is a non-linear dimensionality reduction method something something.
 The resultant projection in shown in Figure~\ref{fig:umap}.
 Different regions in the projection correspond to different types of outliers.
@@ -595,7 +594,7 @@ Throwing the residuals of all the outliers into UMAP thus seems like a nice way 
 %%% LITTLE SUMMARY
 
 We presented a PCA-like model, which we have called robust heteroskedastic matrix factorization or RHMF.
-RHMF has all the nice properties of both HMF \citep{tsalmantza2012} and robust regression \placeholder{citations}, in that it can handle missing data, heteroskedastic noise, and outliers, all in a principled way.
+RHMF has all the nice properties of both HMF \citep{tsalmantza2012} and robust regression \citep{holland1977, hoaglin1983}, in that it can handle missing data, heteroskedastic noise, and outliers, all in a principled way.
 The usefulness of a model of this kind is two-fold: one may care about the low-rank structure without being burdened by outliers, or one can use the inference to identify outliers and then investigate them further.
 We demonstrated mostly the former in the toy example, and the latter in the Gaia example.
 Like all models, it has strengths (hopefully demonstrated in the preceeding sections), and shortcomings, which we will discuss below.
@@ -703,15 +702,15 @@ Hierarchical weight structure, per-object, per-feature, per-pixel, etc.
 \end{acknowledgments}
 
 \software{
-    \texttt{astropy} \placeholder{cite}
-    \texttt{equinox} \placeholder{cite}
-    \texttt{h5py} \placeholder{cite}
-    \texttt{JAX} \placeholder{cite}
-    \texttt{matplotdrip} \placeholder{cite}
-    \texttt{matplotlib} \placeholder{cite}
-    \texttt{numpy} \placeholder{cite}
-    \texttt{polars} \placeholder{cite}
-    \texttt{scipy} \placeholder{cite}
+    \texttt{astropy} \citep{astropy2022},
+    \texttt{equinox} \citep{kidger2021equinox},
+    \texttt{h5py} \citep{collette2013h5py},
+    \texttt{JAX} \citep{jax2018github},
+    \texttt{matplotdrip} \placeholder{cite},
+    \texttt{matplotlib} \citep{hunter2007matplotlib},
+    \texttt{numpy} \citep{harris2020numpy},
+    \texttt{polars} \citep{polars},
+    \texttt{scipy} \citep{virtanen2020scipy}
 }
 
 \appendix
